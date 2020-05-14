@@ -7,10 +7,10 @@ import io.ktor.http.*
 import com.fasterxml.jackson.databind.*
 import io.ktor.jackson.*
 import io.ktor.features.*
-import io.ktor.request.httpMethod
-import io.ktor.request.receive
-import io.ktor.request.receiveText
+import io.ktor.request.*
 import io.ktor.util.caseInsensitiveMap
+import io.ktor.util.pipeline.PipelineContext
+import io.ktor.util.pipeline.PipelineInterceptor
 import io.ktor.util.toMap
 
 fun main(args: Array<String>): Unit = io.ktor.server.netty.EngineMain.main(args)
@@ -26,27 +26,29 @@ fun Application.module(testing: Boolean = false) {
 
     routing {
         route("/{path...}") {
-            get {
-                call.respond(Req(call, call.receiveText()))
-            }
-            post {
-                call.respond(Req(call, call.receiveText()))
-            }
-            put {
-                call.respond(Req(call, call.receiveText()))
-            }
-            delete {
-                call.respond(Req(call, call.receiveText()))
-            }
-            head {
-                call.respond(Req(call, call.receiveText()))
-            }
+            get(makeRes)
+            post(makeRes)
+            put(makeRes)
+            delete(makeRes)
+            head(makeRes)
         }
     }
 }
 
-class Req(call: ApplicationCall, body: String) {
-    val body = ObjectMapper().readTree(body)
+val makeRes: PipelineInterceptor<Unit, ApplicationCall> = {
+    val t = call.request.contentType()
+    val bodyFields: Map<String, List<String>>? =
+        if (call.request.contentType().match(ContentType.Application.FormUrlEncoded))
+            call.receiveParameters().toMap()
+        else null
+    val bodyObject: JsonNode? =
+        if (call.request.contentType().match(ContentType.Text.Plain))
+            ObjectMapper().readTree(call.receiveText())
+        else null
+    call.respond(Req(call, bodyObject, bodyFields))
+}
+
+class Req(call: ApplicationCall, val body: JsonNode?, val bodyFields: Map<String, List<String>>?) {
     val pathParams: List<String> = call.parameters.getAll("path") ?: listOf()
     val queryParams: Map<String, List<String>> = call.request.queryParameters.toMap()
     val method: String = call.request.httpMethod.value
